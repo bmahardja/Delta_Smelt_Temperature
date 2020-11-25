@@ -46,7 +46,7 @@ TNS_smelt$ConductivityTop_s<-(TNS_smelt$ConductivityTop-mean(TNS_smelt$Conductiv
 TNS_smelt$TemperatureTop_s<-(TNS_smelt$TemperatureTop-mean(TNS_smelt$TemperatureTop))/sd(TNS_smelt$TemperatureTop)
 TNS_smelt$julianday_s<-(TNS_smelt$julianday-mean(TNS_smelt$julianday))/sd(TNS_smelt$julianday)
 TNS_smelt$Year_s<-as.numeric(factor(TNS_smelt$Year))
-TNS_smelt$StationCode_s<-as.numeric(factor(TNS_smelt$StationCode))
+TNS_smelt$StationCode_s<-as.numeric(as.factor(TNS_smelt$StationCode))
 TNS_smelt$YearStation_s<-TNS_smelt$Year_s*TNS_smelt$StationCode_s
 
 unique(TNS_smelt$Year_s)
@@ -78,7 +78,7 @@ cat(file = "model.txt","
 model {
 
 # Priors
-alpha.occ ~ dnorm(0, 1) 		# Set B of priors
+
 beta.occ.Secchi ~ dnorm(0, 1)
 alpha.p ~ dnorm(0,1)
 beta.p.Secchi ~ dnorm(0, 1)
@@ -90,8 +90,8 @@ beta.occ.julianday ~ dnorm(0, 1)
  for (i in 1:nobs) { #start initial loop over the nobs sites
  # True state model for the partially observed true state
     z[i] ~ dbern(psi[i])		# True occupancy z at site i
-    logit(psi[i]) <- alpha.occ + beta.occ.julianday * julianday_s[i] + beta.occ.Secchi * Secchi_s[i] + beta.occ.TemperatureTop * TemperatureTop_s[i] + 
-    beta.occ.ConductivityTop * ConductivityTop_s[i] + eta.Y[yr[i]] + eta.S[site[i]]
+    logit(psi[i]) <- beta.occ.julianday * julianday_s[i] + beta.occ.Secchi * Secchi_s[i] + beta.occ.TemperatureTop * TemperatureTop_s[i] + 
+    beta.occ.ConductivityTop * ConductivityTop_s[i] + alpha.occ.Y[yr[i]] + alpha.occ.S[site[i]]
 
     for (j in 1:k) { # start a second loop over the k replicates
        # Observation model for the actual observations
@@ -106,21 +106,23 @@ beta.occ.julianday ~ dnorm(0, 1)
     
     # Random Effects
     # Year
-    for(c in 1:no.yr){
-    eta.Y[c] ~ dnorm(eta.Y.mu,eta.Y.tau)
+    for(a in 1:no.yr){
+    alpha.occ.Y[a] ~ dnorm(mu.int.Y,tau.int.Y)
     }
     # Site
-    for(a in 1:no.site){
-    eta.S[a] ~ dnorm(0,eta.S.tau)
+    for(b in 1:no.site){
+    alpha.occ.S[b] ~ dnorm(mu.int.S,tau.int.S)
     }
     #hyperparameters for random effects
     # Year psi
-    eta.Y.mu ~ dnorm(0,0.37)
-    eta.Y.tau <- pow(eta.Y.ss,-2)
-    eta.Y.ss ~ dunif(0,6)
+    mu.int.Y ~ dnorm(0, 0.001)
+    tau.int.Y <- 1 / (sigma.int.Y * sigma.int.Y)
+    sigma.int.Y ~ dunif(0, 10)
+
     # Site psi
-    eta.S.tau <- pow(eta.S.ss,-2)
-    eta.S.ss ~ dunif(0,6) 
+    mu.int.S ~ dnorm(0, 0.001)
+    tau.int.S <- 1 / (sigma.int.S * sigma.int.S)
+    sigma.int.S ~ dunif(0, 10)
     }
  }
 
@@ -134,14 +136,14 @@ fit.new <- sum(Presi.new[,]) 		# Discrepancy for replicate data set
 
 # Inits function
 zst <- apply(Y, 1, max)			# Good starting values for latent states essential !
-inits <- function(){list(z = zst, alpha.occ=runif(1, -5, 5), beta.occ.julianday = runif(1, -5, 5), 
+inits <- function(){list(z = zst, beta.occ.julianday = runif(1, -5, 5), 
                          beta.occ.Secchi = runif(1, -5, 5),beta.occ.TemperatureTop = runif(1, -5, 5),
-                         beta.occ.ConductivityTop = runif(1, -5, 5), eta.Y = runif(1, -5, 5),eta.S = runif(1, -5, 5),
+                         beta.occ.ConductivityTop = runif(1, -5, 5),mu.int.Y=0, sigma.int.Y =1,mu.int.S=0, sigma.int.S =1,
                          alpha.p = runif(1, -5, 5), beta.p.Secchi = runif(1, -5, 5))}
 
 # Parameters to estimate
-params <- c("alpha.occ","beta.occ.julianday","beta.occ.Secchi","beta.occ.TemperatureTop",
-            "beta.occ.ConductivityTop","eta.Y","eta.S", "alpha.p", "beta.p.Secchi", "occ.fs", "fit", "fit.new")
+params <- c("mu.int.Y","sigma.int.Y","mu.int.S","sigma.int.S","beta.occ.julianday","beta.occ.Secchi","beta.occ.TemperatureTop",
+            "beta.occ.ConductivityTop", "alpha.p", "beta.p.Secchi", "occ.fs", "fit", "fit.new")
 
 # MCMC settings
 na <- 1000  ;  nc <- 3  ;  ni <- 12000  ;  nb <- 2000  ;  nt <- 5
@@ -149,6 +151,9 @@ na <- 1000  ;  nc <- 3  ;  ni <- 12000  ;  nb <- 2000  ;  nt <- 5
 # Call JAGS, check convergence and summarize posteriors
 out <- jags(jags_data, inits, params, "model.txt", n.adapt = na, n.thin = nt, n.chains = nc, 
             n.burnin = nb, n.iter = ni, parallel = TRUE)
+
+
+
 par(mfrow = c(3, 3))  ;  traceplot(out)  ;  par(mfrow = c(1, 1))
 print(out, dig = 3)
 
