@@ -70,7 +70,8 @@ dimnames(Y) <- NULL
 #            covar.Y = dat$covar.Y,covar.X = dat$covar.X)
 
 jags_data<-list(Y=Y, nobs=nobs ,no.yr=no.yr ,no.site=no.site, 
-                k=k, Secchi_s=TNS_smelt$Secchi_s, Secchi_s=TNS_smelt$Secchi_s, 
+                k=k, julianday_s=TNS_smelt$julianday_s,Secchi_s=TNS_smelt$Secchi_s, TemperatureTop_s=TNS_smelt$TemperatureTop_s, 
+                ConductivityTop_s=TNS_smelt$ConductivityTop_s,
                 site=TNS_smelt$StationCode_s, yr=TNS_smelt$Year_s)
 
 cat(file = "model.txt","
@@ -133,11 +134,17 @@ fit.new <- sum(Presi.new[,]) 		# Discrepancy for replicate data set
 
 # Inits function
 zst <- apply(Y, 1, max)			# Good starting values for latent states essential !
-inits <- function(){list(z = zst, alpha.occ=runif(1, -5, 5), beta.occ.Secchi = runif(1, -5, 5), 
+inits <- function(){list(z = zst, alpha.occ=runif(1, -5, 5), beta.occ.julianday = runif(1, -5, 5), 
+                         beta.occ.Secchi = runif(1, -5, 5),beta.occ.TemperatureTop = runif(1, -5, 5),
+                         beta.occ.ConductivityTop = runif(1, -5, 5), eta.Y = runif(1, -5, 5),eta.S = runif(1, -5, 5),
                          alpha.p = runif(1, -5, 5), beta.p.Secchi = runif(1, -5, 5))}
 
 # Parameters to estimate
-params <- c("alpha.occ","beta.occ.Secchi", "alpha.p", "beta.p.Secchi", "occ.fs", "fit", "fit.new")
+params <- c("alpha.occ","beta.occ.julianday","beta.occ.Secchi","beta.occ.TemperatureTop",
+            "beta.occ.ConductivityTop","eta.Y","eta.S", "alpha.p", "beta.p.Secchi", "occ.fs", "fit", "fit.new")
+
+# MCMC settings
+na <- 1000  ;  nc <- 3  ;  ni <- 12000  ;  nb <- 2000  ;  nt <- 5
 
 # Call JAGS, check convergence and summarize posteriors
 out <- jags(jags_data, inits, params, "model.txt", n.adapt = na, n.thin = nt, n.chains = nc, 
