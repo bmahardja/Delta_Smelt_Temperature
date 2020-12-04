@@ -46,7 +46,7 @@ TNS_smelt$ConductivityTop_s<-(TNS_smelt$ConductivityTop-mean(TNS_smelt$Conductiv
 TNS_smelt$TemperatureTop_s<-(TNS_smelt$TemperatureTop-mean(TNS_smelt$TemperatureTop))/sd(TNS_smelt$TemperatureTop)
 TNS_smelt$julianday_s<-(TNS_smelt$julianday-mean(TNS_smelt$julianday))/sd(TNS_smelt$julianday)
 TNS_smelt$Year_s<-as.numeric(factor(TNS_smelt$Year))
-TNS_smelt$StationCode_s<-as.numeric(as.factor(TNS_smelt$StationCode))
+TNS_smelt$StationCode_s<-as.numeric(factor(TNS_smelt$StationCode))
 TNS_smelt$YearStation_s<-TNS_smelt$Year_s*TNS_smelt$StationCode_s
 
 unique(TNS_smelt$Year_s)
@@ -65,32 +65,29 @@ Y=as.matrix(TNS_smelt[,c("Tow1","Tow2","Tow3")])
 dimnames(Y) <- NULL
 
 # create JAGS data input 
-#jags_data<-list(nobs=nobs, k=k,no.yr=no.yr,no.site=no.site, no.yrsite=no.yrsite, 
-#            yr=TNS_smelt$Year_s,site=TNS_smelt$StationCode_s, yrsite=TNS_smelt$YearStation_s, detect=detect, 
-#            covar.Y = dat$covar.Y,covar.X = dat$covar.X)
 
 jags_data<-list(Y=Y, nobs=nobs ,no.yr=no.yr ,no.site=no.site, 
-                k=k, julianday_s=TNS_smelt$julianday_s,Secchi_s=TNS_smelt$Secchi_s, TemperatureTop_s=TNS_smelt$TemperatureTop_s, 
-                ConductivityTop_s=TNS_smelt$ConductivityTop_s,
+                k=k, Secchi_s=TNS_smelt$Secchi_s, TemperatureTop_s=TNS_smelt$TemperatureTop_s, 
+                ConductivityTop_s=TNS_smelt$ConductivityTop_s,julianday_s=TNS_smelt$julianday_s,
                 site=TNS_smelt$StationCode_s, yr=TNS_smelt$Year_s)
 
 cat(file = "model.txt","
 model {
 
 # Priors
-
-beta.occ.Secchi ~ dnorm(0, 1)
-alpha.p ~ dnorm(0,1)
-beta.p.Secchi ~ dnorm(0, 1)
-beta.occ.TemperatureTop ~ dnorm(0, 1)
-beta.occ.ConductivityTop ~ dnorm(0, 1)
-beta.occ.julianday ~ dnorm(0, 1)
+alpha.occ ~ dnorm(0, 0.0001) 		# Set B of priors
+beta.occ.Secchi ~ dnorm(0, 0.0001)
+beta.occ.TemperatureTop ~ dnorm(0, 0.0001)
+beta.occ.ConductivityTop ~ dnorm(0, 0.0001)
+beta.occ.julianday ~ dnorm(0, 0.0001)
+alpha.p ~ dnorm(0,0.0001)
+beta.p.Secchi ~ dnorm(0, 0.0001)
 
 # Likelihood
  for (i in 1:nobs) { #start initial loop over the nobs sites
  # True state model for the partially observed true state
     z[i] ~ dbern(psi[i])		# True occupancy z at site i
-    logit(psi[i]) <- beta.occ.julianday * julianday_s[i] + beta.occ.Secchi * Secchi_s[i] + beta.occ.TemperatureTop * TemperatureTop_s[i] + 
+    logit(psi[i]) <-alpha.occ + beta.occ.julianday * julianday_s[i] + beta.occ.Secchi * Secchi_s[i] + beta.occ.TemperatureTop * TemperatureTop_s[i] + 
     beta.occ.ConductivityTop * ConductivityTop_s[i] + alpha.occ.Y[yr[i]] + alpha.occ.S[site[i]]
 
     for (j in 1:k) { # start a second loop over the k replicates
@@ -103,28 +100,24 @@ beta.occ.julianday ~ dnorm(0, 1)
        Presi[i,j] <- abs(y[i,j]-p[i,j])	 # Absolute residual
        y.new[i,j]~dbern(eff.p[i,j])
        Presi.new[i,j] <- abs(y.new[i,j]-p[i,j])
-    
+    }
+ }
     # Random Effects
     # Year
     for(a in 1:no.yr){
-    alpha.occ.Y[a] ~ dnorm(mu.int.Y,tau.int.Y)
+    alpha.occ.Y[a] ~ dnorm(0,tau.int.Y)
     }
     # Site
     for(b in 1:no.site){
-    alpha.occ.S[b] ~ dnorm(mu.int.S,tau.int.S)
+    alpha.occ.S[b] ~ dnorm(0,tau.int.S)
     }
+    
     #hyperparameters for random effects
-    # Year psi
-    mu.int.Y ~ dnorm(0, 0.001)
-    tau.int.Y <- 1 / (sigma.int.Y * sigma.int.Y)
-    sigma.int.Y ~ dunif(0, 10)
+    tau.int.Y <- 1 / (sigma.Y.int * sigma.Y.int)
+    sigma.Y.int ~ dunif(0, 10)
 
-    # Site psi
-    mu.int.S ~ dnorm(0, 0.001)
-    tau.int.S <- 1 / (sigma.int.S * sigma.int.S)
-    sigma.int.S ~ dunif(0, 10)
-    }
- }
+    tau.int.S <- 1 / (sigma.S.int * sigma.S.int)
+    sigma.S.int ~ dunif(0, 10)
 
 fit <- sum(Presi[,])# Discrepancy for actual data set
 fit.new <- sum(Presi.new[,]) 		# Discrepancy for replicate data set
@@ -142,7 +135,7 @@ inits <- function(){list(z = zst, beta.occ.julianday = runif(1, -5, 5),
                          alpha.p = runif(1, -5, 5), beta.p.Secchi = runif(1, -5, 5))}
 
 # Parameters to estimate
-params <- c("mu.int.Y","sigma.int.Y","mu.int.S","sigma.int.S","beta.occ.julianday","beta.occ.Secchi","beta.occ.TemperatureTop",
+params <- c("alpha.occ","alpha.occ.Y","tau.int.Y","alpha.occ.S","tau.int.S","beta.occ.julianday","beta.occ.Secchi","beta.occ.TemperatureTop",
             "beta.occ.ConductivityTop", "alpha.p", "beta.p.Secchi", "occ.fs", "fit", "fit.new")
 
 # MCMC settings
@@ -204,21 +197,21 @@ jdata<-list(nobs=nobs, k=k,no.yr=no.yr,no.site=no.site, no.yrsite=no.yrsite,
 
 # Parameters to monitor
 params<-c("eta.Y.1.mu",
-           "eta.Y.1.ss",
-           "eta.S.1.ss",
-           "eta.YS.1.ss",
-           "eta.Y.2.mu",
-           "eta.Y.2.ss",
-           "eta.S.2.ss",
-           "eta.YS.2.ss",
-           "gam",
-           "gam2",
-           "beta.p",
-           "delta.p",
-           "abund.det")
+          "eta.Y.1.ss",
+          "eta.S.1.ss",
+          "eta.YS.1.ss",
+          "eta.Y.2.mu",
+          "eta.Y.2.ss",
+          "eta.S.2.ss",
+          "eta.YS.2.ss",
+          "gam",
+          "gam2",
+          "beta.p",
+          "delta.p",
+          "abund.det")
 # invoke JAGS function 
 out.put<-jags(jdata, inits=inits,
-  parameters.to.save =params, parallel = TRUE,
-  model.file= "jag.model", n.chains = 3, n.thin = 1,
-  n.iter = 5000,
-  n.burnin = 1000, n.adapt=3000) summary(out.put)
+              parameters.to.save =params, parallel = TRUE,
+              model.file= "jag.model", n.chains = 3, n.thin = 1,
+              n.iter = 5000,
+              n.burnin = 1000, n.adapt=3000) summary(out.put)
